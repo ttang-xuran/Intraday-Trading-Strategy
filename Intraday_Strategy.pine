@@ -1,7 +1,7 @@
 //@version=5
 strategy("BTC Intraday Trend (5m)",
      overlay = true,
-     initial_capital = 100000,
+     initial_capital = 10000,
      default_qty_type = strategy.percent_of_equity,
      default_qty_value = 0,
      commission_type = strategy.commission.percent,
