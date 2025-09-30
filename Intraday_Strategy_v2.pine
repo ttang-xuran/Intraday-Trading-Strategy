@@ -1,0 +1,84 @@
+//@version=5
+strategy("BTC Intraday Trend (5m) v2",
+     overlay = true,
+     initial_capital = 100000,
+     default_qty_type = strategy.percent_of_equity,
+     default_qty_value = 0,
+     commission_type = strategy.commission.percent,
+     commission_value = 0.05,    // 5 bps per fill
+     calc_on_every_tick = false,
+     process_orders_on_close = true,
+     pyramiding = 0,
+     currency = currency.USD)
+
+// === Inputs identical to the Python reference implementation ===
+barsPerDay       = input.int(288,   "Bars per Day", minval = 1)
+fastLen          = input.int(576,   "Fast MA Length (≈2 days)", minval = 1)
+midLen           = input.int(1008,  "Mid MA Length (≈3.5 days)", minval = 1)
+slowLen          = input.int(1440,  "Slow MA Length (≈5 days)", minval = 1)
+breakoutLookback = input.int(1728,  "Breakout Lookback (≈6 days)", minval = 2)
+breakoutBuffer   = input.float(0.995, "Breakout Buffer", minval = 0.90, maxval = 1.05, step = 0.001)
+entryLeverage    = input.float(130.0, "Position Size (% equity)", minval = 10.0, maxval = 300.0, step = 5.0)
+trailingStopPct  = input.float(12.0,  "Trailing Stop (%)", minval = 2.0, maxval = 30.0, step = 0.5)
+cooldownBarsInp  = input.int(288,     "Cooldown Bars after Exit", minval = 0)
+panicThreshold   = input.float(-7.0,  "Single-Bar Panic (%)", minval = -20.0, maxval = 0.0, step = 0.1)
+
+// === Moving averages & breakout level (close-based) ===
+fastMA      = ta.sma(close, fastLen)
+midMA       = ta.sma(close, midLen)
+slowMA      = ta.sma(close, slowLen)
+highestClose = ta.highest(close, breakoutLookback)
+prevHigh     = highestClose[1]
+
+// === Bar change in percent (for panic exits) ===
+barChangePct = close[1] == 0.0 ? 0.0 : (close / close[1] - 1.0) * 100.0
+
+// === Persistent state ===
+var float peakClose = na
+var int   cooldown  = 0
+
+// === Maintain state with actual broker position ===
+inPosition = strategy.position_size > 0
+if barstate.isnew and not inPosition and cooldown > 0
+    cooldown -= 1
+
+if inPosition
+    peakClose := na(peakClose) ? close : math.max(peakClose, close)
+else
+    peakClose := na
+
+// === Entry logic ===
+breakoutCond   = not na(prevHigh) and not na(fastMA) and not na(midMA) and not na(slowMA)
+trendConfirmed = close > midMA and fastMA > midMA and close > slowMA
+breakoutSignal = breakoutCond and trendConfirmed and close >= prevHigh * breakoutBuffer
+canEnter       = (not inPosition) and (cooldown == 0) and breakoutSignal
+
+// === Exit logic ===
+trailStopFactor = 1.0 - trailingStopPct * 0.01
+trailStopHit   = inPosition and not na(peakClose) and close <= peakClose * trailStopFactor
+maBreakdown    = inPosition and (close < midMA or close < slowMA)
+panicExit      = inPosition and barChangePct <= panicThreshold
+shouldExit     = trailStopHit or maBreakdown or panicExit
+
+// === Orders ===
+if shouldExit and inPosition
+    strategy.close("Long", "ExitLong")
+    cooldown := cooldownBarsInp
+    peakClose := na
+
+if canEnter
+    equity     = strategy.equity
+    qtyPercent = entryLeverage * 0.01
+    qtyCoins   = equity * qtyPercent / close
+    strategy.entry("Long", strategy.long, qty = qtyCoins)
+    peakClose := close
+
+// === Visualization ===
+plot(fastMA, color = color.new(color.teal, 0), title = "Fast MA")
+plot(midMA,  color = color.new(color.blue, 20), title = "Mid MA")
+plot(slowMA, color = color.new(color.orange, 40), title = "Slow MA")
+
+plotshape(canEnter,   title = "Long Entry", location = location.belowbar, color = color.new(color.green, 0), style = shape.triangleup, size = size.tiny, text = "▲")
+plotshape(shouldExit, title = "Exit",       location = location.abovebar, color = color.new(color.red, 0),   style = shape.triangledown, size = size.tiny, text = "▼")
+
+plot(strategy.equity, title = "Strategy Equity", color = color.new(color.purple, 0))

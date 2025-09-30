@@ -1,0 +1,76 @@
+//@version=5
+strategy("SOL Intraday Trend Strategy", overlay=true, initial_capital=100000, currency=currency.USD,
+     default_qty_type=strategy.percent_of_equity, default_qty_value=100,
+     commission_type=strategy.commission.percent, commission_value=0.05,
+     calc_on_every_tick=false, pyramiding=0)
+
+// --- Inputs (defaults reflect optimized parameters) ---
+entry_buffer     = input.float(0.994, "Breakout Buffer", step=0.001, minval=0.95, maxval=1.01)
+entry_leverage   = input.float(1.40, "Leverage (as % of equity)", step=0.05, minval=0.1, maxval=5.0)
+trailing_stop    = input.float(0.10, "Trailing Stop (fraction)", step=0.01, minval=0.01, maxval=0.5)
+cooldown_bars    = input.int(144, "Cooldown (5m bars)", step=1, minval=0, maxval=2000)
+panic_threshold  = input.float(-0.05, "Panic Exit Threshold (bar return)", step=0.005, minval=-0.5, maxval=0.0)
+
+// --- Constants ---
+bars_per_day   = 288
+fast_len       = 2 * bars_per_day              // 2 days
+mid_len        = int(3.5 * bars_per_day)       // 3.5 days
+slow_len       = 5 * bars_per_day              // 5 days
+breakout_len   = 6 * bars_per_day              // 6 days
+
+// --- Series Calculations ---
+ma_fast   = ta.sma(close, fast_len)
+ma_mid    = ta.sma(close, mid_len)
+ma_slow   = ta.sma(close, slow_len)
+roll_high = ta.highest(close, breakout_len)
+bar_ret   = na(close[1]) or close[1] == 0.0 ? 0.0 : close / close[1] - 1.0
+
+// --- Stateful variables ---
+var float peak_price = na
+var int cooldown = 0
+
+long_active = strategy.position_size > 0
+
+if not long_active and cooldown > 0
+    cooldown := math.max(cooldown - 1, 0)
+
+can_trade = not long_active and cooldown == 0
+has_data  = not na(ma_fast) and not na(ma_mid) and not na(ma_slow) and not na(roll_high)
+
+entry_cond = can_trade and has_data and close > ma_mid and ma_fast > ma_mid and close >= roll_high * entry_buffer
+
+if entry_cond
+    strategy.entry("Long", strategy.long, qty=entry_leverage * 100.0)
+    peak_price := close
+
+if long_active
+    peak_price := na(peak_price) ? close : math.max(peak_price, close)
+    drawdown = peak_price == 0.0 ? 0.0 : close / peak_price - 1.0
+    exit_ma_break = close < ma_mid or close < ma_slow
+    exit_trailing = drawdown <= -trailing_stop
+    exit_panic = bar_ret < panic_threshold
+    exit_cond = exit_ma_break or exit_trailing or exit_panic
+    if exit_cond
+        strategy.close("Long")
+        cooldown := cooldown_bars
+        peak_price := na
+else
+    if strategy.position_size[1] > 0
+        cooldown := math.max(cooldown, cooldown_bars)
+        peak_price := na
+
+// --- Visuals ---
+plot(ma_fast,  color=color.new(color.orange, 20), title="MA Fast (2d)")
+plot(ma_mid,   color=color.new(color.blue, 20),   title="MA Mid (3.5d)")
+plot(ma_slow,  color=color.new(color.teal, 20),   title="MA Slow (5d)")
+plot(roll_high * entry_buffer, color=color.new(color.purple, 0), title="Breakout Threshold")
+
+bgcolor(cooldown > 0 and not long_active ? color.new(color.gray, 85) : na)
+
+plot(strategy.position_size != 0 ? close : na, style=plot.style_cross, color=color.new(color.green, 0), title="Active Position Marker")
+
+// --- Diagnostics ---
+plotshape(entry_cond, title="Long Entry", style=shape.triangleup, location=location.belowbar,
+     color=color.new(color.green, 0), size=size.tiny, text="BUY")
+plotshape(long_active and (bar_ret < panic_threshold), title="Panic Exit", style=shape.xcross,
+     location=location.abovebar, color=color.new(color.red, 0), size=size.tiny, text="PANIC")

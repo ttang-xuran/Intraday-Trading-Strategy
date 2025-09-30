@@ -1,0 +1,30 @@
+# Environment files
+.env
+.env.local
+Test market and limit orders (successful).py:Zone.Identifier
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Generated data/outputs (optional - comment out if you want to track)
+5-min-BTC.csv
+5-min-ETH.csv
+intraday_trend_returns.csv
+intraday_trend_exposure.csv
+intraday_trend_stats.csv
+intraday_trend_eth_returns.csv
+intraday_trend_eth_exposure.csv
+intraday_trend_eth_stats.csv
+intraday_trend_eth_opt_returns.csv
+intraday_trend_eth_opt_exposure.csv
+intraday_trend_eth_opt_stats.csv
+backtesting.csv
+eth_optimization_grid.csv
+ETH_equity_original.png
+ETH_equity_optimized.png
