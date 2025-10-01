@@ -67,3 +67,4 @@ python plot_sol_equity.py
 4. **Review performance:** Plot equity curves or combine the `_stats.csv` files into a `strategy_summary.csv` style report.
 
 With these components, you can iteratively update the dataset, validate changes to the breakout logic, and track how refinements affect risk-adjusted returns.
+
